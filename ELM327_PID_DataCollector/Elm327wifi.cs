@@ -7,6 +7,9 @@ using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
+using System.IO;
+using System.Linq.Expressions;
+using System.Net.Sockets;
 
 namespace ELM327_PID_DataCollector
 {
@@ -14,12 +17,21 @@ namespace ELM327_PID_DataCollector
     {
         private string ip { get; set; }
         private int port { get; set; }
+        private string FN_Log { get; set; }
         private TcpClientOBD client;
         private AutoResetEvent arEvent;
         private AutoResetEvent dataReceivedEvent;
         public int totalAvailablePIDcount = 0;
         public List<string> PIDlist = new List<string>();
         private List<PIDvalue> pidValues = new List<PIDvalue>();
+        private FileStream FS_Log;
+        private StreamWriter FSW_Log;
+
+        private string RemoteServerIP { get; set; }
+        private int RemoteServerPort { get; set; }
+        TcpClient tcpClient;
+        NetworkStream tcpStream;
+
 
         private enum Mode
         {
@@ -31,11 +43,63 @@ namespace ELM327_PID_DataCollector
         private Mode mode;
         private bool forceStop = false;
 
-        public Elm327wifi(string ip,int port)
+        public Elm327wifi(string ip,int port, string logFileName)
         {
             pidValues = Helpers.HelperTool.ReadJsonConfiguration(Helpers.HelperTool.ReadResource("PID_Values.json"));
             this.ip= ip;
             this.port= port;
+            this.FN_Log= logFileName;
+
+            if (!(FN_Log.Length > 0 ))
+            {
+                // Making sure the string is not null
+                FN_Log = "Default.txt";
+            }
+
+            FS_Log = new FileStream(FN_Log, FileMode.Append,FileAccess.Write);
+            FSW_Log = new StreamWriter(FS_Log);
+            FSW_Log.WriteLine("************************************************");
+            FSW_Log.WriteLine(DateTime.Now.ToString());
+            FSW_Log.Flush();
+
+            InitTCPClient();
+
+            Console.WriteLine("***************************");
+
+        }
+
+        private void InitTCPClient()
+        {
+            try
+            { 
+
+                Console.Write("Enter Remote TCP Server IP address (ex:192.168.0.10): ");
+                var ip = Console.ReadLine();
+                Console.Write("Enter Remote TCP Server port number (ex:35000): ");
+                int.TryParse(Console.ReadLine(), out int port);
+
+                RemoteServerIP = ip;
+                RemoteServerPort = port;
+
+
+                tcpClient = new TcpClient();
+                tcpClient.Connect(RemoteServerIP, RemoteServerPort);
+                tcpStream = tcpClient.GetStream();
+
+                Byte[] data = System.Text.Encoding.ASCII.GetBytes("Device Powered Up");
+                tcpStream.Write(data, 0, data.Length);
+
+
+            }
+            catch (ArgumentNullException e)
+            {
+                Console.WriteLine("ArgumentNullException: {0}", e);
+            }
+            catch (SocketException e)
+            {
+                Console.WriteLine("SocketException: {0}", e);
+            }
+
         }
 
         public void Start()
@@ -212,6 +276,8 @@ namespace ELM327_PID_DataCollector
             return output.ToUpper();
         }
 
+
+
         private void Client_PidMessageArrived(string message)
         {
             switch (mode)
@@ -230,12 +296,17 @@ namespace ELM327_PID_DataCollector
                         var xx = message.Split("41 0D ")[1];
                         var spd = (message.Split("41 0D ")[1].Replace(" ", "").Substring(0, 2));
                         Console.WriteLine("SPEED : " + (Convert.ToInt32(HelperTool.hex2bin(spd), 2)) + " km/h");
+                        Write2LogFile("SPEED : " + (Convert.ToInt32(HelperTool.hex2bin(spd), 2)) + " km/h");
+                        Write2TCPStream("SPEED : " + (Convert.ToInt32(HelperTool.hex2bin(spd), 2)) + " km/h");
                     }
                     else if (message.Contains("41 0C"))
                     {
                         var xx = message.Split("41 0C ")[1];
                         var rpm = (message.Split("41 0C ")[1].Replace(" ", "").Substring(0, 4));
                         Console.WriteLine("RPM : " + (Convert.ToInt32(HelperTool.hex2bin(rpm), 2) / 4) + " rpm");
+                        Write2LogFile("RPM : " + (Convert.ToInt32(HelperTool.hex2bin(rpm), 2) / 4) + " rpm");
+                        Write2TCPStream("RPM : " + (Convert.ToInt32(HelperTool.hex2bin(rpm), 2) / 4) + " rpm");
+
                     }
                     else if (message.Contains("41 2F"))
                     {
@@ -254,5 +325,20 @@ namespace ELM327_PID_DataCollector
                     break;
             }
         }
+    
+    
+        private void Write2LogFile(string lineData)
+        {
+            FSW_Log.WriteLine(lineData);
+            FSW_Log.Flush();
+        }
+
+        private void Write2TCPStream(string lineData)
+        {
+            Byte[] data = System.Text.Encoding.ASCII.GetBytes(lineData);
+            tcpStream.Write(data, 0, data.Length);
+        }
+    
+    
     }
 }

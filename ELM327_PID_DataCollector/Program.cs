@@ -17,11 +17,11 @@ namespace ELM327_PID_DataCollector
             var Ip = Console.ReadLine();
             Console.Write("Enter OBD Device port number (ex:35000): ");
             int.TryParse(Console.ReadLine(),out int port);
-
+            Console.Write("Enter Log File Name (ex:mylog.txt): ");
+            var logFileName = Console.ReadLine();
             Console.WriteLine("***************************");
 
-
-            Elm327wifi elmObd = new Elm327wifi(Ip,port);
+            Elm327wifi elmObd = new Elm327wifi(Ip,port, logFileName);
 
             while (true)
             {
